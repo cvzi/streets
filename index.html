@@ -1,0 +1,186 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Heidelberg streets</title>
+<style>
+body {font-family:sans-serif}
+h1 {font-size:inherit}
+</style>
+<script>
+
+
+
+var highlights = [
+  {
+  "condition" : (feature) => "name" in feature["properties"] && feature["properties"]["name"].indexOf("Hauptstraße") != -1,
+  "strokeStyle" : "#ff0",
+  "lineWidth" : 3,
+  "lineCap" : "round"
+  },
+  {
+  "condition" : (feature) => "name" in feature["properties"] && feature["properties"]["name"].indexOf("Plöck") != -1,
+  "strokeStyle" : "#00f",
+  "lineWidth" : 3,
+  "lineCap" : "round"
+  },
+  {
+  "condition" : (feature) => "name" in feature["properties"] && feature["properties"]["name"].indexOf("Untere Straße") != -1,
+  "strokeStyle" : "#f00",
+  "lineWidth" : 3,
+  "lineCap" : "round"
+  },
+];
+
+
+
+function main() {
+  // Download json file
+  var url = "planet_8.668_49.398_83f4c70b.osm.json";
+
+  var req = new XMLHttpRequest();
+  req.open('GET', url, true);
+  req.onload  = function() {
+    if (this.status == 200) {
+      return drawMap(filterStreets(JSON.parse(req.responseText)));
+    } else {
+      console.log('XMLHttpRequest Error', req);
+    }
+  };
+  req.send(null);
+}
+
+
+function filterStreets(obj) {
+  // Filter streets "highways"
+  
+  var allStreets = [];
+  var minLat = 999;
+  var maxLat = 0;
+  var minLng = 999;
+  var maxLng = 0;
+
+  for(let feature of obj.features) {
+    if(feature["geometry"]["type"] == "LineString" && "highway" in feature["properties"]) {
+      allStreets.push(feature);
+
+      for(let [longitude, latitude] of feature.geometry.coordinates) {
+      
+        minLng = Math.min(minLng, longitude);
+        maxLng = Math.max(maxLng, longitude);
+        minLat = Math.min(minLat, latitude);
+        maxLat = Math.max(maxLat, latitude);
+      }
+    }
+  }
+  
+  return [minLat, maxLat, minLng, maxLng, allStreets];
+}
+
+
+
+function drawMap(argarray) {
+
+  var [minLat, maxLat, minLng, maxLng, allStreets] = argarray;
+
+  // Simplified map projection:
+  var cos_phi_0 = Math.cos((maxLng - minLng)/2.0); // φ0 denotes a latitude close to the center of the map
+
+  var height = screen.height*0.85;
+  if(height > window.innerHeight) {
+    height = window.innerHeight;
+  }
+  var width = height * cos_phi_0;
+  
+  width = Math.floor(width);
+  height = Math.floor(height);
+  
+  var lngFactor = width / (maxLng - minLng);
+  var latFactor = height / (maxLat - minLat);
+  
+
+  // Draw to canvas
+  var canvas = document.getElementById('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  
+  
+  if (canvas.getContext) {
+    var ctx = canvas.getContext('2d');
+    
+    for(let feature of allStreets) {
+    
+      var highlight = highlights.find((obj) => obj.condition(feature));
+      if(highlight) {
+        // Highlight style
+        if("strokeStyle" in highlight) {
+          ctx.strokeStyle = highlight.strokeStyle
+        }
+        if("lineWidth" in highlight) {
+          ctx.lineWidth = highlight.lineWidth
+        }
+        if("lineCap" in highlight) {
+          ctx.lineCap = highlight.lineCap
+        }
+      } else {
+        // Standard style
+        ctx.strokeStyle = "#000"
+        ctx.lineWidth = 1
+        ctx.lineCap = "butt"
+      }
+      
+      // Draw line
+      ctx.beginPath();
+      let first = true;
+      for(let [longitude, latitude] of feature.geometry.coordinates) {
+        
+        let x = lngFactor * (longitude - minLng);
+        let y = height - latFactor * (latitude - minLat);
+        
+        if(first) {
+          ctx.moveTo(x,y);
+          first = false;
+        } else {
+          ctx.lineTo(x,y);
+        }
+        
+      }
+      ctx.stroke();
+    }
+  }
+
+}
+
+
+function draw() {
+  var canvas = document.getElementById('canvas');
+  if (canvas.getContext) {
+    var ctx = canvas.getContext('2d');
+
+    ctx.fillRect(25, 25, 100, 100);
+    ctx.clearRect(45, 45, 60, 60);
+    ctx.strokeRect(50, 50, 50, 50);
+  }
+}
+
+
+
+</script>
+</head>
+<body onload="main()">
+<h1>Heidelberg streets</h1>
+<div>
+<canvas id="canvas" width="500" height="400"></canvas>
+</div>
+<div><p>
+  Map data: © <a href="https://www.openstreetmap.org">OpenStreetMap</a> contributors
+  <br>Map data downloaded from <a href="https://extract.bbbike.org/">extract.bbbike.org</a>
+  <br>View map data: <a href="planet_8.668_49.398_83f4c70b.osm.json">planet_8.668_49.398_83f4c70b.osm.json</a>
+  <br>View map data license: <a href="ODC%20Open%20Database%20License.txt">ODC Open Database License (ODbL)</a>
+  <br>View source code: <a href="https://github.com/cvzi/streets/tree/gh-pages">github.com/cvzi/streets/</a>
+  <br>View source code license: <a href="LICENSE.txt">MIT License</a>
+</p></div>
+</body>
+</html>
