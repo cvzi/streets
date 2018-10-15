@@ -1,73 +1,77 @@
 ﻿<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Heidelberg streets</title>
 <style>
-body {font-family:sans-serif}
-h1 {font-size:inherit}
+body{font-family:sans-serif}
+h1{font-size:inherit}
 </style>
 <script>
-
-
-
-var highlights = [
+// Highlight some streets
+const highlights = [
   {
-  "condition" : (feature) => "name" in feature["properties"] && feature["properties"]["name"].indexOf("Hauptstraße") != -1,
-  "strokeStyle" : "#ff0",
-  "lineWidth" : 3,
-  "lineCap" : "round"
-  },
-  {
-  "condition" : (feature) => "name" in feature["properties"] && feature["properties"]["name"].indexOf("Plöck") != -1,
+  "condition" : (feature) => "name" in feature.properties && feature.properties.name.includes("Plöck"),
   "strokeStyle" : "#00f",
   "lineWidth" : 3,
   "lineCap" : "round"
   },
   {
-  "condition" : (feature) => "name" in feature["properties"] && feature["properties"]["name"].indexOf("Untere Straße") != -1,
+  "condition" : (feature) => "name" in feature.properties && feature.properties.name.indexOf("Hauptstraße") != -1,
+  "strokeStyle" : "#ff0",
+  "lineWidth" : 3,
+  "lineCap" : "round"
+  },
+  {
+  "condition" : (feature) => "name" in feature.properties && feature.properties.name.indexOf("Untere Straße") != -1,
   "strokeStyle" : "#f00",
+  "lineWidth" : 3,
+  "lineCap" : "round"
+  },
+  {
+  "condition" : (feature) => "name" in feature.properties && feature.properties.name == "Märzgasse",
+  "strokeStyle" : "#f0f",
   "lineWidth" : 3,
   "lineCap" : "round"
   },
 ];
 
-
-
 function main() {
   // Download json file
-  var url = "planet_8.668_49.398_83f4c70b.osm.json";
+  const url = "planet_8.668_49.398_83f4c70b.osm.json";
 
-  var req = new XMLHttpRequest();
-  req.open('GET', url, true);
-  req.onload  = function() {
+  const req = new XMLHttpRequest();
+  req.open("GET", url, true);
+  req.onload = function onload() {
     if (this.status == 200) {
       return drawMap(filterStreets(JSON.parse(req.responseText)));
     } else {
-      console.log('XMLHttpRequest Error', req);
+      console.log("XMLHttpRequest HTTP Status "+req.status);
     }
+  };
+  req.onerror = function onerror() {
+   alert("XMLHttpRequest Error", req);
   };
   req.send(null);
 }
 
-
 function filterStreets(obj) {
   // Filter streets "highways"
-  
-  var allStreets = [];
-  var minLat = 999;
-  var maxLat = 0;
-  var minLng = 999;
-  var maxLng = 0;
 
-  for(let feature of obj.features) {
-    if(feature["geometry"]["type"] == "LineString" && "highway" in feature["properties"]) {
+  const allStreets = [];
+  let minLat = 999;
+  let maxLat = 0;
+  let minLng = 999;
+  let maxLng = 0;
+
+  for(let i = 0; i < obj.features.length; i++) {
+    const feature = obj.features[i];
+    if(feature.geometry.type == "LineString" && "highway" in feature.properties) {
       allStreets.push(feature);
 
-      for(let [longitude, latitude] of feature.geometry.coordinates) {
-      
+      for(const [longitude, latitude] of feature.geometry.coordinates) {
+
         minLng = Math.min(minLng, longitude);
         maxLng = Math.max(maxLng, longitude);
         minLat = Math.min(minLat, latitude);
@@ -75,54 +79,52 @@ function filterStreets(obj) {
       }
     }
   }
-  
   return [minLat, maxLat, minLng, maxLng, allStreets];
 }
 
-
-
 function drawMap(argarray) {
-
-  var [minLat, maxLat, minLng, maxLng, allStreets] = argarray;
+  // Draw map on canvas
+  
+  const [minLat, maxLat, minLng, maxLng, allStreets] = argarray;
 
   // Simplified map projection:
-  var cos_phi_0 = Math.cos((maxLng - minLng)/2.0); // φ0 denotes a latitude close to the center of the map
+  const cosPhi0 = Math.cos((maxLng - minLng)/2.0); // φ0 denotes a latitude close to the center of the map
 
-  var height = screen.height*0.85;
+  let height = screen.height*0.85;
   if(height > window.innerHeight) {
     height = window.innerHeight;
   }
-  var width = height * cos_phi_0;
-  
+  let width = height * cosPhi0;
+
   width = Math.floor(width);
   height = Math.floor(height);
-  
-  var lngFactor = width / (maxLng - minLng);
-  var latFactor = height / (maxLat - minLat);
-  
+
+  const lngFactor = width / (maxLng - minLng);
+  const latFactor = height / (maxLat - minLat);
+
 
   // Draw to canvas
-  var canvas = document.getElementById('canvas');
+  const canvas = document.getElementById("canvas");
   canvas.width = width;
   canvas.height = height;
-  
-  
+
+
   if (canvas.getContext) {
-    var ctx = canvas.getContext('2d');
-    
-    for(let feature of allStreets) {
-    
-      var highlight = highlights.find((obj) => obj.condition(feature));
-      if(highlight) {
+    const ctx = canvas.getContext("2d");
+
+    for(const feature of allStreets) {
+
+      const style = highlights.find((highlight) => highlight.condition(feature));
+      if(style) {
         // Highlight style
-        if("strokeStyle" in highlight) {
-          ctx.strokeStyle = highlight.strokeStyle
+        if("strokeStyle" in style) {
+          ctx.strokeStyle = style.strokeStyle
         }
-        if("lineWidth" in highlight) {
-          ctx.lineWidth = highlight.lineWidth
+        if("lineWidth" in style) {
+          ctx.lineWidth = style.lineWidth
         }
-        if("lineCap" in highlight) {
-          ctx.lineCap = highlight.lineCap
+        if("lineCap" in style) {
+          ctx.lineCap = style.lineCap
         }
       } else {
         // Standard style
@@ -130,42 +132,45 @@ function drawMap(argarray) {
         ctx.lineWidth = 1
         ctx.lineCap = "butt"
       }
-      
+
       // Draw line
       ctx.beginPath();
       let first = true;
-      for(let [longitude, latitude] of feature.geometry.coordinates) {
-        
-        let x = lngFactor * (longitude - minLng);
-        let y = height - latFactor * (latitude - minLat);
-        
+      for(const [longitude, latitude] of feature.geometry.coordinates) {
+
+        const x = lngFactor * (longitude - minLng);
+        const y = height - latFactor * (latitude - minLat);
+
         if(first) {
           ctx.moveTo(x,y);
           first = false;
         } else {
           ctx.lineTo(x,y);
         }
-        
+
       }
       ctx.stroke();
     }
+  } else {
+    alert("Canvas not supported");
   }
-
+  legend();
 }
 
-
-function draw() {
-  var canvas = document.getElementById('canvas');
-  if (canvas.getContext) {
-    var ctx = canvas.getContext('2d');
-
-    ctx.fillRect(25, 25, 100, 100);
-    ctx.clearRect(45, 45, 60, 60);
-    ctx.strokeRect(50, 50, 50, 50);
+function legend() {
+  // Write a legend
+  const l = document.getElementById("legend");
+  l.appendChild(document.createTextNode("Legend:"));
+  for(const style of highlights) {
+    const div = document.createElement("div");
+    div.setAttribute("style", "display:inline-block; width:10px; height:10px; border:1px solid silver; background-color: "+style.strokeStyle);
+    const label = document.createElement("pre");
+    const condition = style.condition.toSource().match(/([|&]{2})|(\w*\s*(in\s*)?!?={0,2}\s*\w*\.?\w*?\(?".*?"\)?\s*(in)?(\s*!?={0,2}\s*-?\d+)?)/g).toString().replace(/,/g," • ")
+    label.append(div);
+    label.appendChild(document.createTextNode(condition));
+    l.append(label);
   }
 }
-
-
 
 </script>
 </head>
@@ -173,6 +178,7 @@ function draw() {
 <h1>Heidelberg streets</h1>
 <div>
 <canvas id="canvas" width="500" height="400"></canvas>
+<p id="legend"></p>
 </div>
 <div><p>
   Map data: © <a href="https://www.openstreetmap.org">OpenStreetMap</a> contributors

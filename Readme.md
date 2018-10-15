@@ -1,5 +1,8 @@
-﻿Proof-of-concept
-================
+﻿# Proof-of-concept
+
+[Live version](https://cvzi.github.io/streets/)
+------------
+
 
 Map data: © [OpenStreetMap](https://www.openstreetmap.org) contributors  
 
