@@ -15,30 +15,20 @@ import kotlinx.coroutines.experimental.async
 import refresco.streetnames.geo.Feature
 import java.io.File
 import java.io.ObjectInputStream
-import android.view.SurfaceView
-import android.graphics.Bitmap
-import android.support.constraint.ConstraintLayout
 import android.util.AttributeSet
-import android.view.SurfaceHolder
 import android.view.View
-import android.view.ViewGroup
 import android.widget.LinearLayout
 import kotlin.math.cos
-import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
-import android.R.attr.y
-import android.R.attr.x
-import android.view.Display
-
-
+import refresco.streetnames.geo.StreetCollection
 
 
 class ViewMapActivity : Activity() {
 
-    private var streets: ArrayList<Feature>? = null
-    fun getStreets(): ArrayList<Feature> {
-        return streets!!
+    private var streetCollection: StreetCollection? = null
+    fun getStreetCollection(): StreetCollection {
+        return streetCollection!!
     }
 
 
@@ -89,79 +79,29 @@ class ViewMapActivity : Activity() {
         layout.addView(drawCanvas, params)
         layout.requestLayout();
 
-        val streets = getStreets()
-
-        var minLat = 999.0
-        var maxLat = 0.0
-        var minLng = 999.0
-        var maxLng = 0.0
-
-
-        for (i in 0 until streets.size) {
-            for (c in streets.get(i).coordinates) {
-                minLat = min(c.latitude, minLat)
-                maxLat = max(c.latitude, maxLat)
-                minLng = min(c.longitude, minLng)
-                maxLng = max(c.longitude, maxLng)
-            }
-        }
-
-        Log.i("drawMap", "min/max calculated")
-
-        /*
-        val cosPhi0 = cos((maxLng - minLng) / 2.0);
-        var height = layout.height - 20
-        var w = floor(height * cosPhi0)
-        Log.i("Dimensions", "h=$height, w=$w")
-
-        Log.i("drawCanvas width", drawCanvas.getMeasuredWidth().toString())
-        while (w > drawCanvas.getMeasuredWidth()) {
-            height -= 10
-            w = floor(height  * cosPhi0)
-            drawCanvas.setLayoutParams(LinearLayout.LayoutParams(w.toInt(), height))
-            Log.i("Dimensions2", "h=$height, w=$w")
-            Log.i("drawCanvas width", drawCanvas.getMeasuredWidth().toString())
-        }
-       val width = w.toInt()
-       Log.i("Dimensions3", "h=$height, w=$width")
-        */
-
-
-
-
-        val cosPhi0 = cos((maxLng - minLng) / 2.0);
+        val streetCollection = getStreetCollection()
 
 
         val (screenwidth, _) = screenSize()
+
+        val cosPhi0 = cos((streetCollection.maxLng - streetCollection.minLng) / 2.0);
 
         val width = screenwidth
         val height = (width/cosPhi0).toInt()
 
 
+        Log.v("drawMap", "streetCollection.streets.size = ${streetCollection.streets.size}")
 
-        val lngFactor = width / (maxLng - minLng)
-        val latFactor = height / (maxLat - minLat)
-
-        Log.i("drawMap", "lngFactor calculated")
-
-        for (i in 0 until streets.size) {
-            var first = true
-            val f = streets.get(i)
-
-            /*
-            val name = f.properties.get("name")
-            if(name != null) {
-            }
-             */
-
-            for (c in f.coordinates) {
-                val x = lngFactor * (c.longitude - minLng)
-                val y = height - latFactor * (c.latitude - minLat)
-                if (first) {
-                    drawCanvas.startPath(x.toFloat(), y.toFloat())
-                    first = false
-                } else {
-                    drawCanvas.addPointToPath(x.toFloat(), y.toFloat())
+        val offset = 0f
+        for((name, lineCollection) in streetCollection.streets) {
+            for (line in lineCollection.lines) {
+                var x = (1f - line.lineCoords[0])*width - width/2f
+                var y = (1f - line.lineCoords[1])*height - height/2f
+                drawCanvas.startPath(x, y)
+                for (i in 3 until line.lineCoords.size step 3) {
+                    x = (1f - line.lineCoords[i])*width - width/2f
+                    y = (1f - line.lineCoords[i+1])*height - height/2f
+                    drawCanvas.addPointToPath(x, y)
                 }
             }
         }
@@ -184,7 +124,7 @@ class ViewMapActivity : Activity() {
         if (file.exists()) {
             textViewStatus.setText("Exists $filename")
 
-            loadFromFileAsync(this, file)
+            loadFromFileAsync( file,this)
         } else {
             val intent = Intent(this, DownloadActivity::class.java)
             startActivity(intent)
@@ -192,11 +132,10 @@ class ViewMapActivity : Activity() {
 
     }
 
+    fun loadFromFileAsync(file: File, activity: ViewMapActivity) = async(Dispatchers.Main) {
 
-    fun loadFromFileAsync(ctx: ViewMapActivity, file: File) = async(Dispatchers.Main) {
-        textViewStatus.setText("Opening ${file.name}")
         try {
-
+            textViewStatus.setText("Opening ${file.name}")
             // TODO Turn on busy indicator.
 
             val job = async(Dispatchers.Default) {
@@ -207,13 +146,18 @@ class ViewMapActivity : Activity() {
 
                 val inputStream = file.inputStream()
                 val objectInputStream = ObjectInputStream(inputStream)
-                ctx.streets = objectInputStream.readObject() as ArrayList<Feature>?
+                try {
+                    activity.streetCollection = objectInputStream.readObject() as StreetCollection
+                } catch (e: java.io.InvalidClassException) {
+                    Log.e("Street", "Could not load from file:\n$e")
+                    streetCollection = null
+                }
 
                 Log.v("File", "loaded")
-                if (ctx.streets == null) {
+                if (activity.streetCollection == null) {
                     Log.v("Features:", "streets is null")
                 } else {
-                    Log.v("Features:", "Length=${ctx.streets!!.size}")
+                    Log.v("Features:", "Length=${activity.streetCollection!!.streets.size}")
                 }
             }
             val result = job.await();
@@ -276,7 +220,6 @@ class ViewMapActivity : Activity() {
 
         }
     }
-
 
 }
 

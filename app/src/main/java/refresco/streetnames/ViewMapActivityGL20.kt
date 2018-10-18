@@ -12,29 +12,31 @@ import android.widget.TextView
 import kotlinx.android.synthetic.main.activity_view_map.*
 import kotlinx.coroutines.experimental.Dispatchers
 import kotlinx.coroutines.experimental.async
-import refresco.streetnames.geo.Feature
 import java.io.File
 import java.io.ObjectInputStream
 import android.opengl.GLSurfaceView
 import android.opengl.GLES20;
 import android.opengl.Matrix
+import android.os.Parcel
+import android.os.Parcelable
+import android.view.GestureDetector
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
-import kotlin.math.cos
-import kotlin.math.max
-import kotlin.math.min
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
+import refresco.streetnames.LineDrawer.Companion.DEFAULTCOLORINDEX
+import refresco.streetnames.geo.LineCollection
+import refresco.streetnames.geo.StreetCollection
 
 
 class ViewMapActivityGL20 : Activity() {
 
-    private var streets: ArrayList<Feature>? = null
-    fun getStreets(): ArrayList<Feature> {
-        return streets!!
+    private var streetCollection: StreetCollection? = null
+    fun getStreetCollection(): StreetCollection {
+        return streetCollection!!
     }
 
     var surfaceView: GLSurfaceView? = null
@@ -89,65 +91,17 @@ class ViewMapActivityGL20 : Activity() {
 
 
     fun initialize() {
-        val streets = getStreets()
-
-        var minLat = 999.0
-        var maxLat = 0.0
-        var minLng = 999.0
-        var maxLng = 0.0
-
-        Log.i("drawMap", "initialize()")
-
-        for (i in 0 until streets.size) {
-            for (c in streets.get(i).coordinates) {
-                minLat = min(c.latitude, minLat)
-                maxLat = max(c.latitude, maxLat)
-                minLng = min(c.longitude, minLng)
-                maxLng = max(c.longitude, maxLng)
-            }
-        }
-
-        Log.i("drawMap", "min/max calculated")
-
-        val cosPhi0 = cos((maxLng - minLng) / 2.0);
-
-
-        val width = 1.0
-        val height = width / cosPhi0
-        Log.i("drawMap", "width = $width , height = $height")
-
-        val lngFactor = width / (maxLng - minLng)
-        val latFactor = height / (maxLat - minLat)
-
-        Log.i("drawMap", "lngFactor calculated")
-
+        val streets = getStreetCollection()
 
         val black = floatArrayOf(0.0f, 0.0f, 0.0f, 1.0f)
         val red = floatArrayOf(1f, 0f, 0f, 1.0f)
-        val colors: HashMap<Int, FloatArray> = hashMapOf(LineDrawer.DEFAULTCOLORINDEX to black)
+        val blue = floatArrayOf(0f, 0f, 1f, 1.0f)
+        val colors: HashMap<String, FloatArray> = hashMapOf(DEFAULTCOLORINDEX to black)
 
-        val allLines = Array<Line>(streets.size) { i ->
-            val f = streets.get(i)
+        colors.put("Hauptstraße", red)
+        colors.put("Plöck", blue)
 
-            var lineCoords = FloatArray(f.coordinates.size * LineDrawer.COORDS_PER_VERTEX)
-            for (index in 0 until f.coordinates.size) {
-                var c = f.coordinates[index]
-                val x = (width * 0.5) - (lngFactor * (c.longitude - minLng))
-                val y = (latFactor * (c.latitude - minLat)) - (height * 0.5)
-                lineCoords[index * LineDrawer.COORDS_PER_VERTEX] = x.toFloat()
-                lineCoords[index * LineDrawer.COORDS_PER_VERTEX + 1] = y.toFloat()
-                lineCoords[index * LineDrawer.COORDS_PER_VERTEX + 2] = 0f
-            }
-
-            if (f.properties.containsKey("name") && f.properties.get("name")!!.contains("Hauptstraße")) {
-                colors.put(i, red)
-            }
-
-
-            Line(lineCoords)
-        }
-
-        val mRenderer = GLRenderer20(allLines, colors)
+        val mRenderer = GLRenderer20(getStreetCollection(), colors)
 
         surfaceView = MyGLSurfaceView(this, mRenderer)
 
@@ -188,13 +142,18 @@ class ViewMapActivityGL20 : Activity() {
 
                 val inputStream = file.inputStream()
                 val objectInputStream = ObjectInputStream(inputStream)
-                activity.streets = objectInputStream.readObject() as ArrayList<Feature>?
+                try {
+                  activity.streetCollection = objectInputStream.readObject() as StreetCollection
+                } catch (e: java.io.InvalidClassException) {
+                    Log.e("Street", "Could not load from file:\n$e")
+                    streetCollection = null
+                }
 
                 Log.v("File", "loaded")
-                if (activity.streets == null) {
+                if (activity.streetCollection == null) {
                     Log.v("Features:", "streets is null")
                 } else {
-                    Log.v("Features:", "Length=${activity.streets!!.size}")
+                    Log.v("Features:", "Length=${activity.streetCollection!!.streets.size}")
                 }
             }
             val result = job.await();
@@ -211,7 +170,12 @@ class ViewMapActivityGL20 : Activity() {
     }
 
     class MyGLSurfaceView(context: Context, val mRenderer: GLRenderer20) : GLSurfaceView(context) {
-        private var mScaleFactor: Float
+        // Viewport extremes. See mCurrentViewport for a discussion of the viewport.
+
+        private var screenWidth = -1
+        private var screenHeight = -1
+
+        private var mScaleFactor = 1f
 
         init {
 
@@ -228,6 +192,13 @@ class ViewMapActivityGL20 : Activity() {
             renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
         }
 
+        override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+            super.onSizeChanged(w, h, oldw, oldh)
+
+            screenWidth = w
+            screenHeight = h
+        }
+
         private val scaleListener = object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
 
             override fun onScale(detector: ScaleGestureDetector): Boolean {
@@ -242,19 +213,149 @@ class ViewMapActivityGL20 : Activity() {
                 return true
             }
         }
-        private val mScaleDetector = ScaleGestureDetector(context, scaleListener)
+        private val mScaleGestureDetector = ScaleGestureDetector(context, scaleListener)
 
+        private val mGestureListener = object : GestureDetector.SimpleOnGestureListener() {
+
+            override fun onDown(e: MotionEvent): Boolean {
+                /*releaseEdgeEffects()
+                mScrollerStartViewport.set(mCurrentViewport)
+                mScroller.forceFinished(true)
+                //ViewCompat.postInvalidateOnAnimation(InteractiveLineGraphView.this)
+                */
+                return true;
+            }
+
+            override fun onDoubleTap(e: MotionEvent): Boolean {
+                /*
+                mZoomer.forceFinished(true)
+                if (hitTest(e.getX(), e.getY(), mZoomFocalPoint)) {
+                    mZoomer.startZoom(ZOOM_AMOUNT)
+                }
+                */
+                //ViewCompat.postInvalidateOnAnimation(InteractiveLineGraphView.this)
+                return true;
+            }
+
+            override fun onScroll(
+                e1: MotionEvent,
+                e2: MotionEvent,
+                distanceX: Float,
+                distanceY: Float
+            ): Boolean {
+
+                Log.v("setViewport", "distanceX = $distanceX, distanceY = $distanceY");
+                Log.v("setViewport", "mScaleFactor = $mScaleFactor");
+                val x = distanceX / screenWidth * 3f / mScaleFactor
+                val y = distanceY / screenHeight * 3f / mScaleFactor
+
+                mRenderer.eyeX -= x
+                mRenderer.eyeY -= y
+
+                requestRender()
+
+
+                Log.v("setViewport", "x = $x, y = $y");
+                Log.v("setViewport", "w = $screenWidth, h = $screenHeight");
+                Log.v("setViewport", " ");
+                return true
+            }
+        }
+
+        private val mGestureDetector = GestureDetector(context, mGestureListener)
 
 
         override fun onTouchEvent(event: MotionEvent): Boolean {
-            // Let the ScaleGestureDetector inspect all events.
-            if(mScaleDetector.onTouchEvent(event)) {
-                return true
-            }
-            return super.onTouchEvent(event)
+            var retVal = mScaleGestureDetector.onTouchEvent(event);
+            retVal = mGestureDetector.onTouchEvent(event) || retVal;
+            return retVal || super.onTouchEvent(event);
         }
 
 
+        override fun onSaveInstanceState(): Parcelable {
+            val superState = super.onSaveInstanceState()
+            val ss = SavedState(superState)
+            ss.eyeX = mRenderer.eyeX
+            ss.eyeY = mRenderer.eyeY
+            ss.zoom = mRenderer.zoom
+
+            return ss
+        }
+
+        override fun onRestoreInstanceState(state: Parcelable?) {
+            if (state !is SavedState) {
+                super.onRestoreInstanceState(state)
+                return
+            }
+            super.onRestoreInstanceState(state.getSuperState())
+
+            // TODO when is this method acutally called?
+            mRenderer.eyeX = state.eyeX
+            mRenderer.eyeY = state.eyeY
+            mRenderer.zoom = state.zoom
+            mScaleFactor = state.zoom
+            Log.v("onRestoreInstanceState", "eyeX = ${state.eyeX}")
+        }
+
+
+        class SavedState(superState: Parcelable) : BaseSavedState(superState) {
+            var eyeX: Float = 0f
+            var eyeY: Float = 0f
+            var zoom: Float = 1f
+
+            constructor (parcelIn: Parcel) : this(parcelIn as Parcelable) {
+                eyeX = parcelIn.readFloat()
+                eyeY = parcelIn.readFloat()
+                zoom = parcelIn.readFloat()
+            }
+
+            override fun writeToParcel(out: Parcel?, flags: Int) {
+                super.writeToParcel(out, flags)
+                out?.writeFloat(eyeX)
+                out?.writeFloat(eyeY)
+                out?.writeFloat(zoom)
+            }
+        }
+
+        /**
+         * Persistent state that is saved by InteractiveLineGraphView.
+
+        public static class SavedState extends BaseSavedState {
+        private RectF viewport;
+        public SavedState(Parcelable superState) {
+        super(superState);
+        }
+        @Override
+        public void writeToParcel(Parcel out, int flags) {
+        super.writeToParcel(out, flags);
+        out.writeFloat(viewport.left);
+        out.writeFloat(viewport.top);
+        out.writeFloat(viewport.right);
+        out.writeFloat(viewport.bottom);
+        }
+        @Override
+        public String toString() {
+        return "InteractiveLineGraphView.SavedState{"
+        + Integer.toHexString(System.identityHashCode(this))
+        + " viewport=" + viewport.toString() + "}";
+        }
+        public static final Parcelable.Creator<SavedState> CREATOR
+        = ParcelableCompat.newCreator(new ParcelableCompatCreatorCallbacks<SavedState>() {
+        @Override
+        public SavedState createFromParcel(Parcel in, ClassLoader loader) {
+        return new SavedState(in);
+        }
+        @Override
+        public SavedState[] newArray(int size) {
+        return new SavedState[size];
+        }
+        });
+        SavedState(Parcel in) {
+        super(in);
+        viewport = new RectF(in.readFloat(), in.readFloat(), in.readFloat(), in.readFloat());
+        }
+        }
+         */
     }
 }
 
@@ -264,8 +365,8 @@ abstract class GLRenderer : GLSurfaceView.Renderer {
 
     protected var mFirstDraw: Boolean = false
     protected var mSurfaceCreated: Boolean = false
-    protected var mWidth: Int = 0
-    protected var mHeight: Int = 0
+    var mWidth: Int = 0
+    var mHeight: Int = 0
     protected var mLastTime: Long = 0
     var fps: Int = 0
         private set
@@ -351,7 +452,7 @@ fun String.loadShader(type: Int): Int {
     }
 }
 
-class GLRenderer20(val lines: Array<Line>, val colors: HashMap<Int, FloatArray>) : GLRenderer() {
+class GLRenderer20(var streetCollection: StreetCollection, val colors: HashMap<String, FloatArray>) : GLRenderer() {
     companion object {
         val MIN_ZOOM = 1.0f
         val MAX_ZOOM = 30.0f
@@ -365,6 +466,9 @@ class GLRenderer20(val lines: Array<Line>, val colors: HashMap<Int, FloatArray>)
 
     private var ratio = 1f
     var zoom = 4f
+
+    var eyeX = 0f
+    var eyeY = 0f
 
 
     override fun onCreate(
@@ -398,7 +502,7 @@ class GLRenderer20(val lines: Array<Line>, val colors: HashMap<Int, FloatArray>)
 
         //val lines: Array<Line> = arrayOf(Line(coords), Line(coords2))
 
-        mLineDrawer = LineDrawer(lines, colors)
+        mLineDrawer = LineDrawer(streetCollection, colors)
 
     }
 
@@ -414,10 +518,10 @@ class GLRenderer20(val lines: Array<Line>, val colors: HashMap<Int, FloatArray>)
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
 
 
-        Matrix.frustumM(mProjectionMatrix, 0, -ratio/zoom, ratio/zoom, -1f/zoom, 1f/zoom, 1f, 25f)
+        Matrix.frustumM(mProjectionMatrix, 0, -ratio / zoom, ratio / zoom, -1f / zoom, 1f / zoom, 1f, 25f)
 
         // Set the camera position (View matrix)
-        Matrix.setLookAtM(mViewMatrix, 0, 0f, 0f, -3f, 0f, 0f, 0f, 0f, 1.0f, 0.0f)
+        Matrix.setLookAtM(mViewMatrix, 0, eyeX, eyeY, -3f, eyeX, eyeY, 0f, 0f, 1.0f, 0.0f)
 
 
         // Calculate the projection and view transformation
@@ -431,19 +535,13 @@ class GLRenderer20(val lines: Array<Line>, val colors: HashMap<Int, FloatArray>)
 }
 
 
-class Line(val lineCoords: FloatArray) {
-
-
-}
-
-
-class LineDrawer(var lines: Array<Line>, val colors: HashMap<Int, FloatArray>) {
+class LineDrawer(var streetCollection: StreetCollection, val colors: HashMap<String, FloatArray>) {
     companion object {
-        val DEFAULTCOLORINDEX = -1
+        val DEFAULTCOLORINDEX = "<DEFAULTCOLOR>"
         val COORDS_PER_VERTEX = 3
     }
 
-    private var vertexBuffers: Array<FloatBuffer>
+    private var vertexBuffers: HashMap<String, FloatBuffer>
     private var mProgram: Int
 
     private val vertexShaderCode =
@@ -475,25 +573,26 @@ class LineDrawer(var lines: Array<Line>, val colors: HashMap<Int, FloatArray>) {
     private val vertexStride: Int = COORDS_PER_VERTEX * java.lang.Float.BYTES // 4 bytes per vertex
 
 
-
-
     init {
-        vertexBuffers = Array(lines.size) { index ->
+        vertexBuffers = HashMap<String, FloatBuffer>(streetCollection.streets.size)
+        for ((name, lineCollection) in streetCollection.streets) {
 
-            ByteBuffer.allocateDirect(lines[index].lineCoords.size * java.lang.Float.BYTES ).run {
-                // use the device hardware's native byte order
-                order(ByteOrder.nativeOrder())
+            vertexBuffers.put(name,
+                ByteBuffer.allocateDirect(lineCollection.totalSize * java.lang.Float.BYTES).run {
+                    // use the device hardware's native byte order
+                    order(ByteOrder.nativeOrder())
 
-                // create a floating point buffer from the ByteBuffer
-                asFloatBuffer().apply {
-                    // add the coordinates to the FloatBuffer
-                    put(lines[index].lineCoords)
-                    // set the buffer to read the first coordinate
-                    position(0)
-                }
-            }
+                    // create a floating point buffer from the ByteBuffer
+                    asFloatBuffer().apply {
+                        // add the coordinates to the FloatBuffer
+                        for (line in lineCollection.lines) {
+                            put(line.lineCoords)
+                        }
+                        // set the buffer to read the first coordinate
+                        position(0)
+                    }
+                })
         }
-
 
         val vertexShader: Int = vertexShaderCode.loadShader(GLES20.GL_VERTEX_SHADER)
         val fragmentShader: Int = fragmentShaderCode.loadShader(GLES20.GL_FRAGMENT_SHADER)
@@ -512,24 +611,6 @@ class LineDrawer(var lines: Array<Line>, val colors: HashMap<Int, FloatArray>) {
 
 
         }
-    }
-
-
-    fun add(line: Line) {
-        lines = lines.plus(line)
-        vertexBuffers = vertexBuffers.plus(
-            ByteBuffer.allocateDirect(line.lineCoords.size * 4).run {
-                // use the device hardware's native byte order
-                order(ByteOrder.nativeOrder())
-
-                // create a floating point buffer from the ByteBuffer
-                asFloatBuffer().apply {
-                    // add the coordinates to the FloatBuffer
-                    put(line.lineCoords)
-                    // set the buffer to read the first coordinate
-                    position(0)
-                }
-            })
     }
 
 
@@ -554,17 +635,17 @@ class LineDrawer(var lines: Array<Line>, val colors: HashMap<Int, FloatArray>) {
 
         var lastColor = colors.get(DEFAULTCOLORINDEX)
         GLES20.glUniform4fv(mColorHandle, 1, lastColor, 0)
-        for (index in 0 until lines.size) {
+        for ((name, lineCollection) in streetCollection.streets) {
 
 
             // Set color for drawing the triangle
-            if (colors.containsKey(index)) { // New color
-                if (colors.get(index) != lastColor) {
-                    lastColor = colors.get(index)
+            if (colors.containsKey(name)) {// Custom color
+                if (colors.get(name) != lastColor) { // Custom color not set yet
+                    lastColor = colors.get(name)
                     GLES20.glUniform4fv(mColorHandle, 1, lastColor, 0)
                 }
-            } else {
-                if (colors.get(DEFAULTCOLORINDEX) != lastColor) { // Default color, index=-1
+            } else { // default color
+                if (colors.get(DEFAULTCOLORINDEX) != lastColor) { // Default color not set yet
                     lastColor = colors.get(DEFAULTCOLORINDEX)
                     GLES20.glUniform4fv(mColorHandle, 1, lastColor, 0)
                 }
@@ -577,11 +658,15 @@ class LineDrawer(var lines: Array<Line>, val colors: HashMap<Int, FloatArray>) {
                 GLES20.GL_FLOAT,
                 false,
                 vertexStride,
-                vertexBuffers[index]
+                vertexBuffers[name]
             )
 
-            // Draw the triangle
-            GLES20.glDrawArrays(GLES20.GL_LINE_STRIP, 0, lines[index].lineCoords.size / COORDS_PER_VERTEX)
+            var offset = 0
+            for (line in lineCollection.lines) {
+                // Draw the triangle
+                GLES20.glDrawArrays(GLES20.GL_LINE_STRIP, offset, line.lineCoords.size / COORDS_PER_VERTEX)
+                offset += line.lineCoords.size / COORDS_PER_VERTEX
+            }
 
         }
 

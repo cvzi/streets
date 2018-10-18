@@ -8,6 +8,8 @@ open class Coordinates(val longitude: Double, val latitude: Double) : Serializab
     constructor(coords: JSONArray) : this(coords.getDouble(0), coords.getDouble(1))
 }
 
+const val UNDEFINEDSTREETNAME = "<undefinedStreetName>"
+
 
 open class Feature(j_obj: JSONObject) : Serializable {
     val type : String
@@ -32,15 +34,38 @@ open class Feature(j_obj: JSONObject) : Serializable {
 
 }
 
-/*
-class Street : Feature {
-    constructor(j_obj: JSONObject) : super(j_obj)
+class Line(val lineCoords: FloatArray, val name: String = UNDEFINEDSTREETNAME) : Serializable
 
-    val highway : String
+class LineCollection() : Serializable {
+    constructor(linesParam: Array<Line>) : this() {
+        lines = linesParam
+    }
+    constructor(line: Line) : this() {
+        lines = lines.plus(line)
+    }
+    var lines: Array<Line> = arrayOf<Line>()
 
-    init {
-        highway = properties.getOrDefault("highway", "")
+    val size: Int
+        get() = lines.size
+
+    val totalSize: Int
+        get() {
+            var sum = 0
+            for(line in lines) {
+                sum += line.lineCoords.size
+            }
+            return sum
+        }
+
+
+    fun add(line: Line) {
+        lines = lines.plus(line)
     }
 
 }
-*/
+
+class StreetCollection(    val name: String, val streets: HashMap<String, LineCollection>,
+                 val minLat: Double,
+                 val maxLat: Double,
+                 val minLng : Double,
+                 val maxLng: Double) : Serializable

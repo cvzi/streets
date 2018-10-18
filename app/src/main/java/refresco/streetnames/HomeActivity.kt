@@ -12,8 +12,8 @@ class HomeActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_home)
 
-        val intent = Intent(this, ViewMapActivityGL20::class.java)
-        startActivity(intent)
+        //val intent = Intent(this, ViewMapActivityGL20::class.java)
+        //startActivity(intent)
 
     }
 
@@ -27,4 +27,10 @@ class HomeActivity : Activity() {
         val intent = Intent(this, ViewMapActivity::class.java)
         startActivity(intent)
     }
+
+    fun goToViewMapActivityGL20(view: View) {
+        val intent = Intent(this, ViewMapActivityGL20::class.java)
+        startActivity(intent)
+    }
+
 }

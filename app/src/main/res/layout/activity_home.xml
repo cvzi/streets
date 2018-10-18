@@ -19,6 +19,17 @@
                 android:layout_height="wrap_content" tools:layout_editor_absoluteY="36dp"
                 tools:layout_editor_absoluteX="58dp" android:id="@+id/buttonViewMap"
                 android:onClick="goToViewMapActivity" tools:text="View Map"/>
+
+        <Button
+            android:id="@+id/buttonViewMapGL20"
+            android:layout_width="fill_parent"
+            android:layout_height="wrap_content"
+            android:onClick="goToViewMapActivityGL20"
+            android:text="View Map GL20"
+            tools:layout_editor_absoluteX="58dp"
+            tools:layout_editor_absoluteY="36dp"
+            tools:text="View Map GL20" />
+
         <Button
                 android:text="Download"
                 android:layout_width="fill_parent"
