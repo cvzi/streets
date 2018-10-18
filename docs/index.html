@@ -1,0 +1,192 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Heidelberg streets</title>
+<style>
+body{font-family:sans-serif}
+h1{font-size:inherit}
+</style>
+<script>
+// Highlight some streets
+const highlights = [
+  {
+  "condition" : (feature) => "name" in feature.properties && feature.properties.name.includes("Plöck"),
+  "strokeStyle" : "#00f",
+  "lineWidth" : 3,
+  "lineCap" : "round"
+  },
+  {
+  "condition" : (feature) => "name" in feature.properties && feature.properties.name.indexOf("Hauptstraße") != -1,
+  "strokeStyle" : "#ff0",
+  "lineWidth" : 3,
+  "lineCap" : "round"
+  },
+  {
+  "condition" : (feature) => "name" in feature.properties && feature.properties.name.indexOf("Untere Straße") != -1,
+  "strokeStyle" : "#f00",
+  "lineWidth" : 3,
+  "lineCap" : "round"
+  },
+  {
+  "condition" : (feature) => "name" in feature.properties && feature.properties.name == "Märzgasse",
+  "strokeStyle" : "#f0f",
+  "lineWidth" : 3,
+  "lineCap" : "round"
+  },
+];
+
+function main() {
+  // Download json file
+  const url = "planet_8.668_49.398_83f4c70b.osm.json";
+
+  const req = new XMLHttpRequest();
+  req.open("GET", url, true);
+  req.onload = function onload() {
+    if (this.status == 200) {
+      return drawMap(filterStreets(JSON.parse(req.responseText)));
+    } else {
+      console.log("XMLHttpRequest HTTP Status "+req.status);
+    }
+  };
+  req.onerror = function onerror() {
+   alert("XMLHttpRequest Error", req);
+  };
+  req.send(null);
+}
+
+function filterStreets(obj) {
+  // Filter streets "highways"
+
+  const allStreets = [];
+  let minLat = 999;
+  let maxLat = 0;
+  let minLng = 999;
+  let maxLng = 0;
+
+  for(let i = 0; i < obj.features.length; i++) {
+    const feature = obj.features[i];
+    if(feature.geometry.type == "LineString" && "highway" in feature.properties) {
+      allStreets.push(feature);
+
+      for(const [longitude, latitude] of feature.geometry.coordinates) {
+
+        minLng = Math.min(minLng, longitude);
+        maxLng = Math.max(maxLng, longitude);
+        minLat = Math.min(minLat, latitude);
+        maxLat = Math.max(maxLat, latitude);
+      }
+    }
+  }
+  return [minLat, maxLat, minLng, maxLng, allStreets];
+}
+
+function drawMap(argarray) {
+  // Draw map on canvas
+  
+  const [minLat, maxLat, minLng, maxLng, allStreets] = argarray;
+
+  // Simplified map projection:
+  const cosPhi0 = Math.cos((maxLng - minLng)/2.0); // φ0 denotes a latitude close to the center of the map
+
+  let height = screen.height*0.85;
+  if(height > window.innerHeight) {
+    height = window.innerHeight;
+  }
+  let width = height * cosPhi0;
+
+  width = Math.floor(width);
+  height = Math.floor(height);
+
+  const lngFactor = width / (maxLng - minLng);
+  const latFactor = height / (maxLat - minLat);
+
+
+  // Draw to canvas
+  const canvas = document.getElementById("canvas");
+  canvas.width = width;
+  canvas.height = height;
+
+
+  if (canvas.getContext) {
+    const ctx = canvas.getContext("2d");
+
+    for(const feature of allStreets) {
+
+      const style = highlights.find((highlight) => highlight.condition(feature));
+      if(style) {
+        // Highlight style
+        if("strokeStyle" in style) {
+          ctx.strokeStyle = style.strokeStyle
+        }
+        if("lineWidth" in style) {
+          ctx.lineWidth = style.lineWidth
+        }
+        if("lineCap" in style) {
+          ctx.lineCap = style.lineCap
+        }
+      } else {
+        // Standard style
+        ctx.strokeStyle = "#000"
+        ctx.lineWidth = 1
+        ctx.lineCap = "butt"
+      }
+
+      // Draw line
+      ctx.beginPath();
+      let first = true;
+      for(const [longitude, latitude] of feature.geometry.coordinates) {
+
+        const x = lngFactor * (longitude - minLng);
+        const y = height - latFactor * (latitude - minLat);
+
+        if(first) {
+          ctx.moveTo(x,y);
+          first = false;
+        } else {
+          ctx.lineTo(x,y);
+        }
+
+      }
+      ctx.stroke();
+    }
+  } else {
+    alert("Canvas not supported");
+  }
+  legend();
+}
+
+function legend() {
+  // Write a legend
+  const l = document.getElementById("legend");
+  l.appendChild(document.createTextNode("Legend:"));
+  for(const style of highlights) {
+    const div = document.createElement("div");
+    div.setAttribute("style", "display:inline-block; width:10px; height:10px; border:1px solid silver; background-color: "+style.strokeStyle);
+    const label = document.createElement("pre");
+    const condition = style.condition.toSource().match(/([|&]{2})|(\w*\s*(in\s*)?!?={0,2}\s*\w*\.?\w*?\(?".*?"\)?\s*(in)?(\s*!?={0,2}\s*-?\d+)?)/g).toString().replace(/,/g," • ")
+    label.append(div);
+    label.appendChild(document.createTextNode(condition));
+    l.append(label);
+  }
+}
+
+</script>
+</head>
+<body onload="main()">
+<h1>Heidelberg streets</h1>
+<div>
+<canvas id="canvas" width="500" height="400"></canvas>
+<p id="legend"></p>
+</div>
+<div><p>
+  Map data: © <a href="https://www.openstreetmap.org">OpenStreetMap</a> contributors
+  <br>Map data downloaded from <a href="https://extract.bbbike.org/">extract.bbbike.org</a>
+  <br>View map data: <a href="planet_8.668_49.398_83f4c70b.osm.json">planet_8.668_49.398_83f4c70b.osm.json</a>
+  <br>View map data license: <a href="ODC%20Open%20Database%20License.txt">ODC Open Database License (ODbL)</a>
+  <br>View source code: <a href="https://github.com/cvzi/streets/tree/gh-pages">github.com/cvzi/streets/</a>
+  <br>View source code license: <a href="LICENSE.txt">MIT License</a>
+</p></div>
+</body>
+</html>
