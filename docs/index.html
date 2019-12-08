@@ -42,7 +42,6 @@ function main() {
   const url = "planet_8.668_49.398_83f4c70b.osm.json";
 
   const req = new XMLHttpRequest();
-  req.open("GET", url, true);
   req.onload = function onload() {
     if (this.status == 200) {
       document.getElementById('loading').style.display = 'none'
@@ -56,11 +55,13 @@ function main() {
    alert("XMLHttpRequest Error", req);
    document.getElementById('loading').innerHTML = "XMLHttpRequest HTTP Status "+req.status
   };
-  req.addEventListener("progress", function(ev) {
+  req.onprogress = function(ev) {
     if (ev.lengthComputable) {
-      document.querySelector('#loading progress').value = ev.loaded / ev.total * 100;
+      console.log(ev.total)
+      document.querySelector('#loading progress').value = ev.loaded / (ev.total?ev.total:8349753) * 100;
     }
-  });
+  };
+  req.open("GET", url, true);
   req.send(null);
 }
 
@@ -173,7 +174,7 @@ function legend() {
     const div = document.createElement("div");
     div.setAttribute("style", "display:inline-block; width:10px; height:10px; border:1px solid silver; background-color: "+style.strokeStyle);
     const label = document.createElement("pre");
-    const condition = style.condition.toSource().match(/([|&]{2})|(\w*\s*(in\s*)?!?={0,2}\s*\w*\.?\w*?\(?".*?"\)?\s*(in)?(\s*!?={0,2}\s*-?\d+)?)/g).toString().replace(/,/g," • ")
+    const condition = style.condition.toSource?style.condition.toSource().match(/([|&]{2})|(\w*\s*(in\s*)?!?={0,2}\s*\w*\.?\w*?\(?".*?"\)?\s*(in)?(\s*!?={0,2}\s*-?\d+)?)/g).toString().replace(/,/g," • "):style.condition
     label.append(div);
     label.appendChild(document.createTextNode(condition));
     l.append(label);
