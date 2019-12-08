@@ -56,8 +56,7 @@ function main() {
    document.getElementById('loading').innerHTML = "XMLHttpRequest HTTP Status "+req.status
   };
   req.onprogress = function(ev) {
-    if (ev.lengthComputable) {
-      console.log(ev.total)
+    if (ev.loaded) {
       document.querySelector('#loading progress').value = ev.loaded / (ev.total?ev.total:8349753) * 100;
     }
   };
