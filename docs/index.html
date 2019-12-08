@@ -45,14 +45,22 @@ function main() {
   req.open("GET", url, true);
   req.onload = function onload() {
     if (this.status == 200) {
+      document.getElementById('loading').style.display = 'none'
       return drawMap(filterStreets(JSON.parse(req.responseText)));
     } else {
       console.log("XMLHttpRequest HTTP Status "+req.status);
+      document.getElementById('loading').innerHTML = "XMLHttpRequest HTTP Status "+req.status
     }
   };
   req.onerror = function onerror() {
    alert("XMLHttpRequest Error", req);
+   document.getElementById('loading').innerHTML = "XMLHttpRequest HTTP Status "+req.status
   };
+  req.addEventListener("progress", function(ev) {
+    if (ev.lengthComputable) {
+      document.querySelector('#loading progress').value = ev.loaded / ev.total * 100;
+    }
+  });
   req.send(null);
 }
 
@@ -177,6 +185,7 @@ function legend() {
 <body onload="main()">
 <h1>Heidelberg streets</h1>
 <div>
+<div id="loading"><progress value="0" max="100"></progress> Loading map data...</div>
 <canvas id="canvas" width="500" height="400"></canvas>
 <p id="legend"></p>
 </div>
